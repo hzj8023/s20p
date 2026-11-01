@@ -6,7 +6,7 @@ REPO_URL=${REPO_URL:-https://github.com/chasey-dev/immortalwrt-mt798x-rebase}
 REPO_BRANCH=${REPO_BRANCH:-25.12}
 REPO_COMMIT=${REPO_COMMIT:-9f397975c7b47ce6986a6e39529d2f72fd5c729d}
 LAN_IP=${LAN_IP:-10.1.1.1}
-DEFAULT_THEME=${DEFAULT_THEME:-argon}
+DEFAULT_THEME=${DEFAULT_THEME:-lucent}
 WIFI_COMBO=${WIFI_COMBO:-7673-20260601}
 JOBS=${JOBS:-2}
 OPENWRT_DIR="$ROOT/openwrt"
@@ -128,7 +128,7 @@ for sym in CONFIG_BPF_SYSCALL CONFIG_BPF_JIT; do
 	fi
 done
 
-for pkg in kmod-mt_wifi luci-app-mtwifi-cfg luci-app-lucky luci-theme-argon luci-theme-fluent luci-app-firewall luci-app-package-manager openbox-installer luci-app-upnp luci-app-quickfile quickfile luci-nginx luci-app-diskman kmod-sched-core kmod-sched-bpf kmod-xdp-sockets-diag kmod-veth mdio-tools; do
+for pkg in kmod-mt_wifi luci-app-mtwifi-cfg luci-app-lucky lucky luci-theme-lucent luci-theme-argon luci-app-firewall luci-app-package-manager luci-app-upnp luci-app-quickfile quickfile luci-nginx luci-app-diskman kmod-sched-core kmod-sched-bpf kmod-xdp-sockets-diag kmod-veth mdio-tools honk luci-app-honk luci-lib-daeuniverse v2ray-geoip v2ray-geosite luci-app-ethled; do
 	if ! grep -q "^CONFIG_PACKAGE_${pkg}=y$" .config; then
 		echo "ERROR: package ${pkg} was dropped by make defconfig"
 		exit 1

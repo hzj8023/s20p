@@ -1,0 +1,27 @@
+#!/bin/sh /etc/rc.common
+#
+# ethled is a one-shot: it writes the LED registers of the port PHYs and exits.
+# Nothing runs in the background, so "running" is not tracked; START=99 puts it
+# after the network (START=20), which is when the PHY drivers apply the device
+# tree LED configuration for the first time. Writing later is what makes the
+# user's choice win, and /etc/hotplug.d/iface/20-ethled re-applies it whenever
+# an interface comes back up.
+
+START=99
+STOP=01
+
+start() {
+	/usr/sbin/ethled apply
+}
+
+stop() {
+	return 0
+}
+
+restart() {
+	start
+}
+
+reload() {
+	start
+}

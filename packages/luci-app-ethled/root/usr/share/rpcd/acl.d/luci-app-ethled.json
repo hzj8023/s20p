@@ -1,0 +1,39 @@
+{
+	"luci-app-ethled": {
+		"description": "Grant access to the S20P Ethernet port LED settings",
+		"read": {
+			"file": {
+				"/usr/sbin/ethled apply": [ "exec" ],
+				"/usr/sbin/ethled ports": [ "exec" ],
+				"/usr/sbin/ethled dump": [ "exec" ],
+				"/usr/sbin/ethled dump *": [ "exec" ],
+				"/usr/sbin/ethled off": [ "exec" ],
+				"/usr/sbin/ethled off *": [ "exec" ],
+				"/usr/sbin/ethled on": [ "exec" ],
+				"/usr/sbin/ethled on *": [ "exec" ]
+			},
+			"ubus": {
+				"file": [ "exec" ],
+				"rc": [ "list" ],
+				"uci": [ "get" ]
+			},
+			"uci": [ "ethled", "network" ]
+		},
+		"write": {
+			"file": {
+				"/usr/sbin/ethled apply": [ "exec" ],
+				"/usr/sbin/ethled dump": [ "exec" ],
+				"/usr/sbin/ethled dump *": [ "exec" ],
+				"/usr/sbin/ethled off": [ "exec" ],
+				"/usr/sbin/ethled off *": [ "exec" ],
+				"/usr/sbin/ethled on": [ "exec" ],
+				"/usr/sbin/ethled on *": [ "exec" ]
+			},
+			"ubus": {
+				"file": [ "exec" ],
+				"rc": [ "init" ]
+			},
+			"uci": [ "ethled" ]
+		}
+	}
+}

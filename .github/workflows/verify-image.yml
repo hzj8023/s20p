@@ -82,16 +82,22 @@ jobs:
           fi
 
           echo '=== themes ==='
-          [ -d $R/www/luci-static/argon ] && ok "argon static files" || bad "argon static files missing"
-          [ -d $R/www/luci-static/fluent ] && ok "fluent static files" || bad "fluent static files missing"
+          [ -d $R/www/luci-static/lucent ] && ok "lucent static files" || bad "lucent static files missing"
+          [ -d $R/www/luci-static/argon ] && ok "argon static files (备用)" || bad "argon static files missing"
+          [ -d $R/www/luci-static/fluent ] && bad "fluent static files must be gone" || ok "fluent static files removed"
           [ -f $R/etc/uci-defaults/99-set-default-theme ] && ok "default-theme uci-defaults" || bad "default-theme uci-defaults missing"
-          if grep -q "mediaurlbase.*argon" $R/etc/config/luci 2>/dev/null; then
-            ok "default theme baked in /etc/config/luci: argon"
-          elif grep -q 'THEME="argon"' $R/etc/uci-defaults/99-set-default-theme 2>/dev/null \
+          if grep -q "mediaurlbase.*lucent" $R/etc/config/luci 2>/dev/null; then
+            ok "default theme baked in /etc/config/luci: lucent"
+          elif grep -q 'THEME="lucent"' $R/etc/uci-defaults/99-set-default-theme 2>/dev/null \
                && grep -q 'mediaurlbase="/luci-static/\$THEME"' $R/etc/uci-defaults/99-set-default-theme 2>/dev/null; then
-            ok "default theme set by first-boot uci-defaults: argon"
+            ok "default theme set by first-boot uci-defaults: lucent"
           else
-            bad "default theme is not argon"
+            bad "default theme is not lucent"
+          fi
+          if grep -q "luci.themes.Lucent='/luci-static/lucent'" $R/etc/uci-defaults/99-set-default-theme 2>/dev/null; then
+            ok "Lucent registered as a luci theme"
+          else
+            bad "Lucent theme not registered in uci-defaults"
           fi
           if grep -q "option lang 'zh_cn'" $R/etc/config/luci 2>/dev/null; then
             ok "default LuCI language: zh_cn"
@@ -126,22 +132,55 @@ jobs:
           fi
           [ -f $R/etc/uci-defaults/99-add-fantastic-feed ] && ok "fantastic feed uci-defaults" || bad "fantastic feed uci-defaults missing"
 
-          echo '=== Open-Box installer ==='
+          echo '=== Open-Box must be gone ==='
           for f in usr/sbin/openbox-install etc/init.d/openbox-autoinstall etc/uci-defaults/99-enable-openbox-autoinstall; do
-            [ -f "$R/$f" ] && ok "openbox: /$f" || bad "openbox: /$f missing"
+            [ -f "$R/$f" ] && bad "openbox leftover: /$f" || ok "openbox absent: /$f"
           done
+
+          echo '=== honk (Open-Box 的替代) ==='
+          for f in usr/bin/honk-core etc/init.d/honk etc/config/honk etc/honk/config.dae; do
+            [ -f "$R/$f" ] && ok "honk: /$f" || bad "honk: /$f missing"
+          done
+          [ -L "$R/usr/share/honk/geoip.dat" ] && ok "honk geoip.dat link" || bad "honk geoip.dat link missing"
+          [ -L "$R/usr/share/honk/geosite.dat" ] && ok "honk geosite.dat link" || bad "honk geosite.dat link missing"
+          if grep -q "option enabled '0'" $R/etc/config/honk 2>/dev/null; then
+            ok "honk ships disabled; the user turns it on after adding nodes"
+          else
+            bad "honk must default to enabled=0"
+          fi
+          if grep -q "password_auth: true" $R/etc/honk/config.dae 2>/dev/null; then
+            ok "honk native API keeps password auth"
+          else
+            bad "honk config.dae lost password_auth"
+          fi
+
+          echo '=== 网口指示灯控制 ==='
+          for f in usr/sbin/ethled etc/config/ethled etc/init.d/ethled etc/hotplug.d/iface/20-ethled \
+                   www/luci-static/resources/view/ethled/main.js \
+                   usr/share/luci/menu.d/luci-app-ethled.json usr/share/rpcd/acl.d/luci-app-ethled.json; do
+            [ -f "$R/$f" ] && ok "ethled: /$f" || bad "ethled: /$f missing"
+          done
+          if grep -q "option switch_lan '0'" $R/etc/config/ethled 2>/dev/null; then
+            ok "MT7531 lan1-5 writes stay disabled by default"
+          else
+            bad "ethled must ship with switch_lan=0 (unverified switch LED bits)"
+          fi
+          [ -x "$R/etc/init.d/ethled" ] && ok "ethled init is executable" || bad "ethled init is not executable"
 
           echo '=== required packages ==='
           for p in luci-app-lucky lucky luci-app-quickfile quickfile \
                    luci-nginx luci-app-diskman luci-app-upnp miniupnpd-nftables \
                    kmod-sched-core kmod-sched-bpf kmod-xdp-sockets-diag kmod-veth mdio-tools \
-                   luci-theme-argon luci-theme-fluent openbox-installer kmod-mt_wifi mtwifi-cfg-ucode luci-app-mtwifi-cfg luci-i18n-base-zh-cn luci-app-argon-config ttyd luci-app-ttyd; do
+                   kmod-nft-queue kmod-nfnetlink-queue \
+                   honk luci-app-honk luci-lib-daeuniverse v2ray-geoip v2ray-geosite luci-app-ethled \
+                   luci-theme-lucent luci-theme-argon kmod-mt_wifi mtwifi-cfg-ucode luci-app-mtwifi-cfg luci-i18n-base-zh-cn luci-app-argon-config ttyd luci-app-ttyd; do
             want_pkg "$p"
           done
 
           echo '=== forbidden packages ==='
           for p in luci-app-oaf kmod-oaf appfilter luci-app-samba4 samba4-server luci-app-filemanager luci-app-filebrowser filebrowser \
-                   dae luci-app-dae daed dae-geoip dae-geosite luci-app-usb-printer p910nd luci-app-modem; do
+                   dae luci-app-dae daed dae-geoip dae-geosite luci-app-usb-printer p910nd luci-app-modem \
+                   luci-theme-fluent luci-i18n-fluent-zh-cn openbox-installer; do
             deny_pkg "$p"
           done
 
@@ -156,16 +195,17 @@ jobs:
           else
             bad "Argon theme is not 3.1.1"
           fi
-          if grep -A1 '^P:openbox-installer$' "$PK" 2>/dev/null | grep -q '^V:0.1.371'; then
-            ok "Open-Box installer version 0.1.371"
+          if grep -A1 '^P:luci-theme-lucent$' "$PK" 2>/dev/null | grep -q '^V:3.6.1'; then
+            ok "Lucent theme version 3.6.1"
           else
-            bad "Open-Box installer is not 0.1.371"
+            bad "Lucent theme is not 3.6.1"
           fi
-          if grep -A1 '^P:luci-i18n-fluent-zh-cn$' "$PK" 2>/dev/null | grep -q '^V:1.0.9'; then
-            ok "Fluent zh-cn i18n version 1.0.9"
+          if grep -A1 '^P:honk$' "$PK" 2>/dev/null | grep -q '^V:0.1.0_beta4'; then
+            ok "honk version 0.1.0_beta4 (pinned upstream release)"
           else
-            bad "Fluent zh-cn i18n version is not 1.0.9"
+            bad "honk is not 0.1.0_beta4"
           fi
+          echo "themes present in /www/luci-static: $(ls $R/www/luci-static/ 2>/dev/null | tr '\n' ' ')"
 
           echo '=== package count ==='
           echo "installed APK packages: $(grep -c '^P:' "$PK" 2>/dev/null || echo 0)"

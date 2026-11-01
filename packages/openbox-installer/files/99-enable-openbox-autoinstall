@@ -1,4 +1,0 @@
-#!/bin/sh
-/etc/init.d/openbox-autoinstall enable
-/etc/init.d/openbox-autoinstall start
-exit 0

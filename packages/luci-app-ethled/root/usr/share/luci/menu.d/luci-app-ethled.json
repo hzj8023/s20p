@@ -1,0 +1,14 @@
+{
+	"admin/network/ethled": {
+		"title": "网口指示灯",
+		"order": 80,
+		"action": {
+			"type": "view",
+			"path": "ethled/main"
+		},
+		"depends": {
+			"acl": [ "luci-app-ethled" ],
+			"uci": { "ethled": true }
+		}
+	}
+}

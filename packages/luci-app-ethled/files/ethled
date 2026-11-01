@@ -1,0 +1,280 @@
+#!/bin/sh
+# ethled - Ethernet port LED control for the CLX S20P.
+#
+# The S20P has two kinds of port LEDs:
+#
+#  * lan6 and eth1(WAN) hang off two RTL8221B-VB-CG 2.5G PHYs (C45 access) on the
+#    SoC mdio bus. Their LED registers are MDIO_MMD_VEND2 (30):
+#      0xd032 + 2*index  LED link-speed select, bits: 10M=0x01 100M=0x02
+#                        1000M=0x04 2500M=0x20
+#      0xd040            LED activity (blink) enable, bit per LED index
+#      0xd044            LED polarity, bit per LED index
+#    Those definitions are mainline's (drivers/net/phy/realtek/realtek_main.c,
+#    RTL822X_VND2_LED/LCR6/LCR7), where LED_OFF writes 0 to the link-select
+#    register and clears the activity and polarity bits.
+#
+#  * lan1-lan5 are ports of the MT7531AE, whose internal GE PHYs are driven by
+#    mtk-ge.c. ImmortalWrt's hack-6.12/766 patch turns each pair of
+#    "mediatek,led-config = <reg val>" DT cells into phy_write_mmd(MMD_VEND2,...),
+#    and the in-tree board DTSs document the registers:
+#      0x21 LED_BASIC_CTRL  0x22 ON_DURATION  0x23 BLINK_DURATION
+#      0x24 LED0_ON_CTRL    0x25 LED0_BLINK_CTRL
+#      0x26 LED1_ON_CTRL    0x27 LED1_BLINK_CTRL
+#    A value of 0x8000 with blink 0x0000 is what those DTSs use for an LED that
+#    shall not light at all (acer-w6-common.dtsi / ruijie-rg-x60-pro.dts), and
+#    0xc001/0x0003 + 0xc006/0x003c is the lit profile.
+#
+# Both groups are written through the mdio tool from mdio-tools, which talks
+# netlink-mdio directly to the bus, so nothing here depends on phytool.
+#
+# Caution about the kernel driver: patch 735-net-phy-realtek-apply-led-config-on-
+# rtl822xb.patch lets rtl8221b_config_led() run once per PHY per boot, so writes
+# made here survive link flaps. If that patch is ever dropped, the driver rewrites
+# the device tree values on every read_status and this tool has to be re-armed on
+# each link event (that is what the net hotplug handler is for).
+
+. /lib/functions.sh
+
+CONFIG=ethled
+MDIO_BIN="${MDIO_BIN:-mdio}"
+RTL_LINK_REG=0xd032
+RTL_ACT_REG=0xd040
+RTL_POL_REG=0xd044
+MT7531_LED_OFF=0x8000
+MT7531_BLINK_OFF=0x0000
+
+log() {
+	logger -t ethled "$@" 2>/dev/null || echo "ethled: $@"
+}
+
+usage() {
+	cat <<EOF
+用法: ethled <command> [options]
+
+  apply            按 /etc/config/ethled 下发到所有网口
+  off [port]       立即熄灭所有（或指定）网口的指示灯，不改配置文件
+  on [port]        按配置文件重新点亮，用于 off 之后恢复
+  dump [port]      回读 LED 寄存器当前值
+  ports            列出端口及其 mdio 总线/PHY 地址
+
+port 取 /etc/config/ethled 里的 section 名，如 lan6、wan、lan1。
+EOF
+}
+
+# mdio_write <bus> <phy> <reg> <value>
+mdio_write() {
+	$MDIO_BIN "$1" mmd "$2:30" raw "$3" "$4" >/dev/null 2>&1 || {
+		log "write failed: bus=$1 phy=$2 reg=$3 value=$4"
+		return 1
+	}
+}
+
+# mdio_read <bus> <phy> <reg>
+mdio_read() {
+	$MDIO_BIN "$1" mmd "$2:30" raw "$3" 2>/dev/null
+}
+
+# speed_bits "10 100 1000 2500" -> bitmask
+speed_bits() {
+	local bits=0 s
+	for s in $1; do
+		case "$s" in
+			10)   bits=$((bits | 0x01)) ;;
+			100)  bits=$((bits | 0x02)) ;;
+			1000) bits=$((bits | 0x04)) ;;
+			2500) bits=$((bits | 0x20)) ;;
+			*)    log "unknown speed '$s', ignored" ;;
+		esac
+	done
+	echo "$bits"
+}
+
+# Each RTL8221B LED has its own link-select register; activity and polarity are
+# one bit per LED inside a shared register, so both are accumulated and written
+# once.
+apply_rtl8221b() {
+	local bus="$1" phy="$2" name="$3"
+	local i act pol reg link speeds enable blink invert rc=0
+	act=0
+	pol=0
+	for i in 0 1 2; do
+		config_get enable "$name" "led${i}_enable" 0
+		config_get blink "$name" "led${i}_blink" 0
+		config_get invert "$name" "led${i}_invert" 0
+		config_get speeds "$name" "led${i}_speeds" "10 100 1000 2500"
+		reg=$(printf 0x%04x $((RTL_LINK_REG + i * 2)))
+		if [ "$enable" = 1 ]; then
+			link=$(speed_bits "$speeds")
+			mdio_write "$bus" "$phy" "$reg" "$(printf 0x%04x $link)" || rc=1
+			[ "$blink" = 1 ] && act=$((act | (1 << i)))
+			[ "$invert" = 1 ] && pol=$((pol | (1 << i)))
+		else
+			mdio_write "$bus" "$phy" "$reg" 0x0000 || rc=1
+		fi
+	done
+	mdio_write "$bus" "$phy" "$(printf 0x%04x $RTL_ACT_REG)" "$(printf 0x%04x $act)" || rc=1
+	mdio_write "$bus" "$phy" "$(printf 0x%04x $RTL_POL_REG)" "$(printf 0x%04x $pol)" || rc=1
+	return $rc
+}
+
+# lan1-lan5 are switch ports 0-4 and their labels are inverted in the board DTS
+# (port@4 = lan1 ... port@0 = lan5); the phy address equals the port number.
+apply_mt7531() {
+	local bus="$1" phy="$2" name="$3"
+	local led enable on blink reg blinkreg rc=0
+
+	for led in 0 1; do
+		case "$led" in
+			0) reg=0x24; blinkreg=0x25
+			   config_get on "$name" led0_on_ctrl 0xc001
+			   config_get blink "$name" led0_blink_ctrl 0x0003 ;;
+			1) reg=0x26; blinkreg=0x27
+			   config_get on "$name" led1_on_ctrl 0xc006
+			   config_get blink "$name" led1_blink_ctrl 0x003c ;;
+		esac
+		config_get enable "$name" "led${led}" 1
+		if [ "$enable" != 1 ]; then
+			on=$MT7531_LED_OFF
+			blink=$MT7531_BLINK_OFF
+		fi
+		mdio_write "$bus" "$phy" "$reg" "$on" || rc=1
+		mdio_write "$bus" "$phy" "$blinkreg" "$blink" || rc=1
+	done
+	return $rc
+}
+
+apply_port() {
+	local name="$1"
+	local type bus phy enabled switch_lan
+
+	config_get type "$name" type
+	config_get bus "$name" bus ""
+	config_get phy "$name" phy ""
+	config_get enabled "$name" enabled 1
+	config_get switch_lan global switch_lan 0
+
+	[ -n "$FILTER" ] && [ "$FILTER" != "$name" ] && return 0
+	[ -n "$bus" ] && [ -n "$phy" ] || { log "port $name: missing bus or phy, skipped"; return 0; }
+	[ "$enabled" = 1 ] || { log "port $name: disabled in uci, left untouched"; return 0; }
+
+	if [ "$type" = mt7531 ] && [ "$switch_lan" != 1 ]; then
+		log "lan1-lan5 control is off (ethled.global.switch_lan=0); $name skipped"
+		return 0
+	fi
+
+	case "$type" in
+		rtl8221b) apply_rtl8221b "$bus" "$phy" "$name" ;;
+		mt7531)   apply_mt7531 "$bus" "$phy" "$name" ;;
+		*) log "port $name: unknown type '$type'"; return 1 ;;
+	esac
+}
+
+dump_port() {
+	local name="$1"
+	local type bus phy reg i led
+
+	config_get type "$name" type
+	config_get bus "$name" bus ""
+	config_get phy "$name" phy ""
+	[ -n "$bus" ] && [ -n "$phy" ] || return 0
+	[ -n "$FILTER" ] && [ "$FILTER" != "$name" ] && return 0
+
+	echo "== $name ($type, bus=$bus phy=$phy)"
+	case "$type" in
+		rtl8221b)
+			for i in 0 1 2; do
+				reg=$(printf 0x%04x $((RTL_LINK_REG + i * 2)))
+				echo "  led$i link-select $reg = $(mdio_read "$bus" "$phy" "$reg")"
+			done
+			echo "  activity $(printf 0x%04x $RTL_ACT_REG) = $(mdio_read "$bus" "$phy" "$(printf 0x%04x $RTL_ACT_REG)")"
+			echo "  polarity $(printf 0x%04x $RTL_POL_REG) = $(mdio_read "$bus" "$phy" "$(printf 0x%04x $RTL_POL_REG)")"
+			;;
+		mt7531)
+			for led in 21 22 23 24 25 26 27; do
+				echo "  0x$led = $(mdio_read "$bus" "$phy" "0x$led")"
+			done
+			;;
+	esac
+}
+
+list_port() {
+	local name="$1" type bus phy enabled
+
+	config_get type "$name" type
+	config_get bus "$name" bus
+	config_get phy "$name" phy
+	config_get enabled "$name" enabled 1
+	printf '%-6s %-9s bus=%-14s phy=%s enabled=%s\n' "$name" "$type" "$bus" "$phy" "$enabled"
+}
+
+force_off() {
+	local name="$1"
+	local type bus phy switch_lan
+
+	config_get type "$name" type
+	config_get bus "$name" bus
+	config_get phy "$name" phy
+	[ -n "$FILTER" ] && [ "$FILTER" != "$name" ] && return 0
+	[ -n "$bus" ] && [ -n "$phy" ] || return 0
+
+	case "$type" in
+		rtl8221b)
+			local i reg
+			for i in 0 1 2; do
+				reg=$(printf 0x%04x $((RTL_LINK_REG + i * 2)))
+				mdio_write "$bus" "$phy" "$reg" 0x0000
+			done
+			mdio_write "$bus" "$phy" "$(printf 0x%04x $RTL_ACT_REG)" 0x0000
+			mdio_write "$bus" "$phy" "$(printf 0x%04x $RTL_POL_REG)" 0x0000
+			;;
+		mt7531)
+			config_get switch_lan global switch_lan 0
+			[ "$switch_lan" = 1 ] || {
+				log "lan1-lan5 control is off (ethled.global.switch_lan=0); $name untouched"
+				return 0
+			}
+			mdio_write "$bus" "$phy" 0x24 $MT7531_LED_OFF
+			mdio_write "$bus" "$phy" 0x25 $MT7531_BLINK_OFF
+			mdio_write "$bus" "$phy" 0x26 $MT7531_LED_OFF
+			mdio_write "$bus" "$phy" 0x27 $MT7531_BLINK_OFF
+			;;
+	esac
+	echo "已熄灭 $name 的指示灯（重启后按配置文件恢复）"
+}
+
+global_enabled() {
+	local v
+	config_get v global enabled 1
+	[ "$v" = 1 ]
+}
+
+case "$1" in
+	apply)
+		config_load "$CONFIG"
+		global_enabled || { echo "ethled.global.enabled=0，未下发"; exit 0; }
+		config_foreach apply_port port
+		;;
+	off)
+		config_load "$CONFIG"
+		FILTER="$2"
+		config_foreach force_off port
+		;;
+	on)
+		config_load "$CONFIG"
+		FILTER="$2"
+		config_foreach apply_port port
+		;;
+	dump)
+		config_load "$CONFIG"
+		FILTER="$2"
+		config_foreach dump_port port
+		;;
+	ports)
+		config_load "$CONFIG"
+		config_foreach list_port port
+		;;
+	*)
+		usage
+		exit 1
+		;;
+esac

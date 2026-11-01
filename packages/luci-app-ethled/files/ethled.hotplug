@@ -1,0 +1,20 @@
+#!/bin/sh
+#
+# Re-arm the port LEDs after an interface comes back up. The register writes are
+# idempotent, so running this on every ifup costs nothing and keeps the user's
+# profile in the PHYs even if a driver or a PHY reset restored the defaults.
+
+[ "$ACTION" = "ifup" ] || exit 0
+
+. /lib/functions.sh
+
+config_load ethled
+
+config_get enabled global enabled 1
+config_get apply_on_link global apply_on_link 1
+
+[ "$enabled" = 1 ] || exit 0
+[ "$apply_on_link" = 1 ] || exit 0
+
+logger -t ethled "re-apply after ifup of ${INTERFACE:-unknown}"
+/usr/sbin/ethled apply

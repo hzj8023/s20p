@@ -44,12 +44,6 @@ EOF
 echo "==> install Lucky 3.5.0 XiaoJV core Makefile"
 cp "$ROOT/packages/lucky/Makefile" package/lucky/lucky/Makefile
 
-echo "==> set Fluent package version"
-sed -i 's/PKG_VERSION:=1.0.8/PKG_VERSION:=1.0.9/' package/luci-theme-fluent/Makefile
-sed -i '/^PKG_VERSION:=1.0.9$/a PKG_PO_VERSION:=1.0.9' package/luci-theme-fluent/Makefile
-grep -q '^PKG_PO_VERSION:=1.0.9$' package/luci-theme-fluent/Makefile \
-	|| { echo "ERROR: failed to set Fluent i18n version"; exit 1; }
-
 echo "==> set LAN IP"
 SET_IP="${LAN_IP:-10.1.1.1}"
 FLASH_JS=$(find feeds/luci/modules/luci-mod-system -type f -name flash.js | head -n 1)
@@ -59,7 +53,7 @@ fi
 sed -i "s/192\.168\.[0-9]*\.[0-9]*/$SET_IP/g" package/base-files/files/bin/config_generate
 
 echo "==> set default theme and Chinese UI"
-THEME="${DEFAULT_THEME:-argon}"
+THEME="${DEFAULT_THEME:-lucent}"
 LUCI_CFG=feeds/luci/modules/luci-base/root/etc/config/luci
 if [ -f "$LUCI_CFG" ] && grep -q '^[[:space:]]*option mediaurlbase' "$LUCI_CFG"; then
 	sed -i "s#^\(\s*option mediaurlbase\s*\).*#\1/luci-static/$THEME#" "$LUCI_CFG"
@@ -78,8 +72,8 @@ cat > package/base-files/files/etc/uci-defaults/99-set-default-theme <<EOF
 
 THEME="$THEME"
 
+uci set luci.themes.Lucent='/luci-static/lucent'
 uci set luci.themes.Argon='/luci-static/argon'
-uci set luci.themes.Fluent='/luci-static/fluent'
 
 if [ -d "/www/luci-static/\$THEME" ]; then
 	uci set luci.main.mediaurlbase="/luci-static/\$THEME"
@@ -147,7 +141,7 @@ EOF
 chmod 0755 package/base-files/files/etc/uci-defaults/99-add-fantastic-feed
 
 echo "==> ucode crash guards (unregistered functions + POSIX ERE)"
-GUARD_DIRS="feeds/luci package/lucky package/luci-theme-argon package/luci-theme-fluent package/quickfile"
+GUARD_DIRS="feeds/luci package/lucky package/luci-theme-argon package/luci-theme-lucent package/quickfile package/luci-app-honk package/luci-lib-daeuniverse package/luci-app-ethled"
 python3 "$ROOT/scripts/ucode_guard.py" $GUARD_DIRS
 python3 "$ROOT/scripts/posix_re_check.py" $GUARD_DIRS
 
