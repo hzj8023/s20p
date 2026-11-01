@@ -31,6 +31,13 @@ define Package/luci-app-ethled/description
  kernel PHY drivers in the build tree, and the settings live in /etc/config/ethled.
 endef
 
+# Nothing to compile: the package is shell, UCI config and LuCI assets installed
+# straight from files/ and root/. Without this stub the default rule runs make in
+# an empty build directory and fails with "No targets specified and no makefile
+# found".
+define Build/Compile
+endef
+
 define Package/luci-app-ethled/conffiles
 /etc/config/ethled
 endef
