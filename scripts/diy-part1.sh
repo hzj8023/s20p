@@ -67,7 +67,7 @@ grep -q 'call BuildPackage' package/luci-app-ethled/Makefile || { echo "ERROR: l
 
 echo "==> luci-app-trafficctl 上网控制"
 rm -rf package/trafficctl
-git clone --depth 1 https://github.com/glorw/trafficctl.git package/trafficctl
+git clone --depth 1 https://mirror.ghproxy.com/https://github.com/glorw/trafficctl.git package/trafficctl
 if git -C package/trafficctl fetch --depth 1 origin 0851b10; then
 	git -C package/trafficctl checkout --detach 0851b10
 else
