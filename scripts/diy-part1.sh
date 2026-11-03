@@ -65,6 +65,14 @@ for f in files/ethled files/ethled.config files/ethled.init files/ethled.hotplug
 done
 grep -q 'call BuildPackage' package/luci-app-ethled/Makefile || { echo "ERROR: luci-app-ethled Makefile lacks BuildPackage call"; exit 1; }
 
+echo "==> luci-app-trafficctl 上网控制"
+rm -rf package/trafficctl
+git clone --depth 1 https://github.com/glorw/trafficctl.git package/trafficctl
+if git -C package/trafficctl fetch --depth 1 origin 0851b10; then
+	git -C package/trafficctl checkout --detach 0851b10
+else
+	echo "WARNING: trafficctl pinned commit拉取失败，使用HEAD"
+fi
 echo "==> package versions"
 git -C package/lucky rev-parse --short HEAD
 git -C package/luci-theme-argon describe --tags --always
