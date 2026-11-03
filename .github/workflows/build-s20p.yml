@@ -6,7 +6,7 @@ on:
       LAN_IP:
         description: 'LAN IP address'
         required: true
-        default: '10.1.1.1'
+        default: '192.168.2.1'
       DEFAULT_THEME:
         description: 'Default LuCI theme'
         required: true
