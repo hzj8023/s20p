@@ -141,7 +141,7 @@ EOF
 chmod 0755 package/base-files/files/etc/uci-defaults/99-add-fantastic-feed
 
 echo "==> ucode crash guards (unregistered functions + POSIX ERE)"
-GUARD_DIRS="feeds/luci package/lucky package/luci-theme-argon package/luci-theme-lucent package/quickfile package/luci-app-honk package/luci-lib-daeuniverse package/luci-app-ethled"
+GUARD_DIRS="feeds/luci package/lucky package/luci-theme-argon package/luci-theme-lucent package/quickfile package/luci-app-ethled"
 python3 "$ROOT/scripts/ucode_guard.py" $GUARD_DIRS
 python3 "$ROOT/scripts/posix_re_check.py" $GUARD_DIRS
 
