@@ -64,7 +64,8 @@ for f in files/ethled files/ethled.config files/ethled.init files/ethled.hotplug
 	[ -f "package/luci-app-ethled/$f" ] || { echo "ERROR: luci-app-ethled $f is missing"; exit 1; }
 done
 grep -q 'call BuildPackage' package/luci-app-ethled/Makefile || { echo "ERROR: luci-app-ethled Makefile lacks BuildPackage call"; exit 1; }
-、echo "==> package versions"
+
+echo "==> package versions"
 git -C package/lucky rev-parse --short HEAD
 git -C package/luci-theme-argon describe --tags --always
 git -C package/luci-theme-lucent describe --tags --always
